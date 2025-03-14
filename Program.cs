@@ -2,7 +2,6 @@
 using RedEx;
 using ExportOptions = RedEx.ExportOptions;
 
-
 if (args.Any(x => x.Equals("export", StringComparison.InvariantCultureIgnoreCase)))
 {
     await Parser.Default.ParseArguments<ExportOptions>(args).WithParsedAsync(Export.Run);

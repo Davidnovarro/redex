@@ -26,6 +26,9 @@ public abstract class OptionsBase
         if(string.IsNullOrEmpty(FilePath))
             FilePath = Envir.GetStringOrDefault("REDEX_FILE_PATH", "/redis_export.json");
     }
+
+
+    public OptionsBase() { }
 }
 
 public class ExportOptions : OptionsBase
@@ -52,6 +55,10 @@ public class ExportOptions : OptionsBase
         if (ScanCountPerPage <= 0)
             ScanCountPerPage = Envir.GetLongOrDefault("REDIS_SCAN_COUNT_PER_PAGE", 5000);
     }
+
+    public ExportOptions() : base()
+    {
+    }
 }
 
 public class ImportOptions : OptionsBase
@@ -67,5 +74,9 @@ public class ImportOptions : OptionsBase
         base.Init();
         if (BatchCount <= 0)
             BatchCount = Envir.GetIntOrDefault("REDIS_BATCH_COUNT", 1000);
+    }
+
+    public ImportOptions() : base()
+    {
     }
 }

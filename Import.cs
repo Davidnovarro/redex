@@ -23,6 +23,9 @@ public static class Import
 
         Console.WriteLine($"Options: {JsonConvert.SerializeObject(options)}");
 
+        var totalLineCount = (int)Tools.CountLines(options.FilePath);
+        using var progressInfo = new ProgressInfo(totalLineCount, "Importing: {0} of {1}");
+        
         using var fileReader = new MultiThreadFileReader(options.FilePath, options.BatchCount * 2);
 
         var tasks = new List<Task>();
@@ -38,7 +41,7 @@ public static class Import
         
             var batch = db.CreateBatch();
             
-            while (!fileReader.Queue.IsEmpty)
+            while (!fileReader.Queue.IsEmpty && tasks.Count < options.BatchCount)
             {
                 fileReader.Queue.TryDequeue(out var line);
                 ExportValue ex = JsonConvert.DeserializeObject<ExportValue>(line);
@@ -47,12 +50,15 @@ public static class Import
                     tasks.Add(batch.ExecuteAsync("RESTORE", ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v, "REPLACE"));
                 else
                     tasks.Add(batch.ExecuteAsync("RESTORE", ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v));
-
-                batch.Execute();
-                await Task.WhenAll(tasks);
-                tasks.Clear();
             }
+            
+            batch.Execute();
+            await Task.WhenAll(tasks);
+            progressInfo.Tick(progressInfo.bar.CurrentTick + tasks.Count);
+            tasks.Clear();
         }
+        
+        progressInfo.Tick(progressInfo.bar.MaxTicks);
         return 0;
     }
 }

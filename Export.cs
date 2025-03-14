@@ -1,4 +1,6 @@
 ﻿using Newtonsoft.Json;
+using Party.Utility;
+using ShellProgressBar;
 using StackExchange.Redis;
 
 namespace RedEx;
@@ -20,25 +22,39 @@ public static class Export
 
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConfiguration);
         IDatabase db = multiplexer.GetDatabase(options.DB);
-
         Console.WriteLine($"Options: {JsonConvert.SerializeObject(options)}");
         
         using var fileWriter = new MultiThreadFileWriter(options.FilePath);
 
-        var exporter = new DefaultExporter(db, options);
-
-        while (!exporter.IsFinished)
+        int totalKeyCount = 0;
+        
+        foreach (var server in multiplexer.GetServers())
         {
-            var list = await exporter.ExportAsync();
-            
-            while (fileWriter.Queue.Count > options.ScanCountPerPage * 3)
-                Thread.Sleep(10);
+            totalKeyCount += (int)await server.ExecuteAsync("DBSIZE");
+        }
+        
+        using var progressInfo = new ProgressInfo(totalKeyCount, "Exporting: {0} of {1}");
+        
+        foreach (var server in multiplexer.GetServers())
+        {
+            var exporter = new DefaultExporter(db, server, options);
 
-            foreach (var ex in list)
+            while (!exporter.IsFinished)
             {
-                fileWriter.WriteLine(JsonConvert.SerializeObject(ex));
+                var list = await exporter.ExportAsync();
+
+                while (fileWriter.Queue.Count > options.ScanCountPerPage * 3)
+                    Thread.Sleep(10);
+
+                foreach (var ex in list)
+                    fileWriter.WriteLine(JsonConvert.SerializeObject(ex));
+                
+                progressInfo.Tick(progressInfo.bar.CurrentTick + list.Count);
             }
         }
+        
+        progressInfo.Tick(progressInfo.bar.MaxTicks);
+
 
         //Wait for all lines to be written
         while (!fileWriter.Queue.IsEmpty)
@@ -49,8 +65,6 @@ public static class Export
         //Queue is empty, now we can call the Cancellation
         await fileWriter.CancellationTokenSource.CancelAsync();
         await fileWriter.task;
-
-        Console.WriteLine("Finished!");
         return 0;
     }
 }

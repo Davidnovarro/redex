@@ -3,7 +3,7 @@ using StackExchange.Redis;
 
 namespace RedEx;
 
-public class DefaultExporter(IDatabase redisDb, ExportOptions options)
+public class DefaultExporter(IDatabase redisDb, IServer server, ExportOptions options)
 {
     protected readonly IDatabase DB = redisDb;
     protected readonly ExportOptions Options = options;
@@ -25,7 +25,7 @@ public class DefaultExporter(IDatabase redisDb, ExportOptions options)
         tasks.Clear();
         cursor ??= 0;
 
-        RedisResult scanResult = await DB.ExecuteAsync("SCAN", cursor, "MATCH", Options.KeyPattern, "COUNT", Options.ScanCountPerPage);
+        RedisResult scanResult = await server.ExecuteAsync("SCAN", cursor, "MATCH", Options.KeyPattern, "COUNT", Options.ScanCountPerPage);
         cursor = ulong.Parse((string)scanResult[0]);
         var keys = scanResult[1];
 
@@ -44,7 +44,6 @@ public class DefaultExporter(IDatabase redisDb, ExportOptions options)
             tasks.Add(batch.ExecuteAsync("TTL", ex.k).ContinueWith(x => ex.ttl = (long)x.Result));
             tasks.Add(batch.ExecuteAsync("DUMP", ex.k).ContinueWith(x => ex.v = (byte[])x.Result));
         }
-
         batch.Execute();
         await Task.WhenAll(tasks);
         tasks.Clear();
