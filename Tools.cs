@@ -1,4 +1,6 @@
-﻿namespace RedEx;
+﻿using System.Text;
+
+namespace RedEx;
 
 public static class Tools
 {

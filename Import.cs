@@ -26,7 +26,7 @@ public static class Import
         var totalLineCount = (int)Tools.CountLines(options.FilePath);
         using var progressInfo = new ProgressInfo(totalLineCount, "Importing: {0} of {1}");
         
-        using var fileReader = new MultiThreadFileReader(options.FilePath, options.BatchCount * 2);
+        using var fileReader = new MultiThreadExportValueReader(options.FilePath, options.BatchCount * 4);
 
         var tasks = new List<Task>();
         
@@ -43,13 +43,11 @@ public static class Import
             
             while (!fileReader.Queue.IsEmpty && tasks.Count < options.BatchCount)
             {
-                fileReader.Queue.TryDequeue(out var line);
-                ExportValue ex = JsonConvert.DeserializeObject<ExportValue>(line);
-
-                if (options.ReplaceKeys)
-                    tasks.Add(batch.ExecuteAsync("RESTORE", ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v, "REPLACE"));
-                else
-                    tasks.Add(batch.ExecuteAsync("RESTORE", ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v));
+                if (!fileReader.Queue.TryDequeue(out var ex) || ex.v == null) //Skip if the key was removed or expired, it might be because there was a delay between the SCAN and DUMP commands.
+                    continue;
+                
+                var arguments = options.ReplaceKeys ? new object[] { ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v, "REPLACE" } : new object[] { ex.k, ex.ttl > 0 ? ex.ttl : 0, ex.v };
+                tasks.Add(batch.ExecuteAsync("RESTORE", arguments));
             }
             
             batch.Execute();

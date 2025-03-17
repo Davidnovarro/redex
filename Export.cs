@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using System.Diagnostics;
+using Newtonsoft.Json;
 using Party.Utility;
 using ShellProgressBar;
 using StackExchange.Redis;
@@ -24,12 +25,15 @@ public static class Export
         IDatabase db = multiplexer.GetDatabase(options.DB);
         Console.WriteLine($"Options: {JsonConvert.SerializeObject(options)}");
         
-        using var fileWriter = new MultiThreadFileWriter(options.FilePath);
+        using var fileWriter = new MultiThreadExportValueWriter(options.FilePath);
 
         int totalKeyCount = 0;
         
         foreach (var server in multiplexer.GetServers())
         {
+            if(server.IsReplica)
+                continue;
+            
             totalKeyCount += (int)await server.ExecuteAsync("DBSIZE");
         }
         
@@ -37,24 +41,31 @@ public static class Export
         
         foreach (var server in multiplexer.GetServers())
         {
+            if(server.IsReplica)
+                continue;
+            
             var exporter = new DefaultExporter(db, server, options);
 
             while (!exporter.IsFinished)
             {
                 var list = await exporter.ExportAsync();
 
-                while (fileWriter.Queue.Count > options.ScanCountPerPage * 3)
+                while (fileWriter.Queue.Count > options.ScanCountPerPage * 4)
                     Thread.Sleep(10);
 
                 foreach (var ex in list)
-                    fileWriter.WriteLine(JsonConvert.SerializeObject(ex));
+                {
+                    if(ex.v == null) //Skip if the key was removed or expired, it might be because there was a delay between the SCAN and DUMP commands.  
+                        continue;
+                    
+                    fileWriter.WriteLine(ex);
+                }
                 
                 progressInfo.Tick(progressInfo.bar.CurrentTick + list.Count);
             }
         }
         
         progressInfo.Tick(progressInfo.bar.MaxTicks);
-
 
         //Wait for all lines to be written
         while (!fileWriter.Queue.IsEmpty)
